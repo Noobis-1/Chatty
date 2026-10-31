@@ -1,0 +1,1362 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>챗티 (Chatty)</title>
+    
+    <!-- 💡 PWABuilder 표준 Manifest 태그 -->
+    <link rel="manifest" href="data:application/manifest+json;utf8,%7B%22background_color%22%3A%22%2375fa15%22%2C%22dir%22%3A%22ltr%22%2C%22display%22%3A%22standalone%22%2C%22name%22%3A%22Chatty%22%2C%22orientation%22%3A%22any%22%2C%22scope%22%3A%22%2F%22%2C%22short_name%22%3A%22Chatty%22%2C%22start_url%22%3A%22%2F%22%2C%22theme_color%22%3A%22%2349ff00%22%2C%22icons%22%3A%5B%7B%22src%22%3A%22https%3A%2F%2Fscript.google.com%2Ffavicon.ico%22%2C%22type%22%3A%22image%2Fx-icon%22%2C%22sizes%22%3A%2232x32%22%7D%5D%2C%22id%22%3A%22Chatty%22%2C%22description%22%3A%22%EC%B1%84%ED%8C%85%20%ED%94%8C%EB%9E%A9%ED%8F%BC%22%7D">
+
+    <!-- 💡 PWABuilder 표준 Service Worker 등록 태그 -->
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                const swContent = "self.addEventListener('install', e => self.skipWaiting()); self.addEventListener('activate', e => e.waitUntil(clients.claim())); self.addEventListener('fetch', e => e.respondWith(fetch(e.request).catch(() => caches.match(e.request))));";
+                const swBlob = new Blob([swContent], { type: 'text/javascript' });
+                const swUrl = URL.createObjectURL(swBlob);
+                navigator.serviceWorker.register(swUrl).catch(err => console.log('SW registration failed: ', err));
+            });
+        }
+    </script>
+
+    <style>
+        :root {
+            --bg-chatty: #e3eedc;
+            --chatty-green: #10b981;
+            --chatty-green-hover: #059669;
+            --chatty-dark: #064e3b;
+            --panel: #ffffff;
+            --border: #f0f0f0;
+            --text-main: #222222;
+            --text-muted: #888888;
+            --bubble-me: #a7f3d0;
+            --bubble-other: #ffffff;
+        }
+        body { font-family: 'Segoe UI', system-ui, sans-serif; background: #eef4ed; color: var(--text-main); margin: 0; padding: 0; height: 100vh; display: flex; justify-content: center; align-items: center; overflow: hidden; }
+
+        .chatty-app { width: 100%; max-width: 480px; height: 100%; max-height: 850px; background: var(--panel); display: flex; flex-direction: column; box-shadow: 0 10px 40px rgba(0,0,0,0.15); border-radius: 12px; overflow: hidden; position: relative; }
+        @media (max-width: 500px) { .chatty-app { max-width: 100%; height: 100%; max-height: 100%; border-radius: 0; } }
+
+        #authScreen { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: var(--chatty-green); display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 100; padding: 30px; box-sizing: border-box; }
+        .auth-box { width: 100%; max-width: 340px; text-align: center; }
+        .auth-box h1 { color: #fff; font-size: 32px; margin-bottom: 8px; font-weight: 800; }
+        .auth-box p { color: #ecfdf5; font-size: 13px; margin-bottom: 24px; }
+        .auth-input { width: 100%; padding: 14px 16px; background: #fff; border: none; border-radius: 8px; margin-bottom: 12px; font-size: 14px; box-sizing: border-box; outline: none; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
+        .auth-btn { width: 100%; padding: 14px; background: var(--chatty-dark); color: #fff; border: none; border-radius: 8px; font-weight: 700; font-size: 15px; cursor: pointer; margin-top: 6px; }
+        .auth-toggle { margin-top: 16px; font-size: 13px; color: #ecfdf5; cursor: pointer; }
+
+        .chatty-header { height: 54px; background: #ffffff; border-bottom: 1px solid #eaeaea; display: flex; justify-content: space-between; align-items: center; padding: 0 16px; box-sizing: border-box; flex-shrink: 0; }
+        .chatty-header h2 { font-size: 18px; font-weight: 700; margin: 0; color: #111; }
+
+        .content-area { flex: 1; display: flex; flex-direction: column; overflow: hidden; position: relative; background: #ffffff; }
+        .tab-panel { display: none; flex: 1; flex-direction: column; height: 100%; overflow-y: auto; }
+        .tab-panel.active { display: flex; }
+
+        .chatty-nav { height: 60px; background: #f9f9fa; border-top: 1px solid #ededed; display: grid; grid-template-columns: repeat(4, 1fr); flex-shrink: 0; }
+        .nav-item { display: flex; flex-direction: column; justify-content: center; align-items: center; cursor: pointer; color: #999; font-size: 11px; gap: 4px; position: relative; }
+        .nav-item.active { color: var(--chatty-green); font-weight: 600; }
+        .nav-icon { font-size: 20px; }
+
+        .badge { position: absolute; top: 8px; right: 32%; background: #ef4444; color: #fff; font-size: 10px; font-weight: bold; padding: 2px 6px; border-radius: 10px; min-width: 14px; text-align: center; box-shadow: 0 2px 4px rgba(239, 68, 68, 0.4); }
+
+        .my-profile-row { display: flex; align-items: center; padding: 16px; border-bottom: 1px solid #f0f0f0; gap: 14px; cursor: pointer; }
+        .my-profile-row:hover { background: #fcfcfc; }
+        
+        .profile-avatar { width: 50px; height: 50px; background: #e0e0e0; border-radius: 18px; display: flex; justify-content: center; align-items: center; font-size: 20px; font-weight: 700; color: #555; flex-shrink: 0; overflow: hidden; position: relative; }
+        .profile-avatar img { width: 100%; height: 100%; object-fit: cover; }
+
+        .section-title { font-size: 12px; color: var(--text-muted); padding: 12px 16px 4px 16px; font-weight: 600; }
+        .friend-row { display: flex; align-items: center; padding: 10px 16px; gap: 14px; cursor: pointer; position: relative; }
+        .friend-row:hover { background: #f8f9fa; }
+
+        .chat-room-list { flex: 1; overflow-y: auto; }
+        .chat-room-item { display: flex; align-items: center; padding: 12px 16px; gap: 14px; cursor: pointer; border-bottom: 1px solid #f9f9f9; position: relative; }
+        .chat-room-item:hover { background: #f8f9fa; }
+
+        #chatRoomView { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: var(--bg-chatty); display: none; flex-direction: column; z-index: 10; }
+        .chat-room-header { height: 50px; background: rgba(255,255,255,0.92); backdrop-filter: blur(5px); display: flex; align-items: center; padding: 0 16px; gap: 12px; border-bottom: 1px solid rgba(0,0,0,0.05); }
+        .back-btn { background: none; border: none; font-size: 18px; cursor: pointer; font-weight: bold; }
+        .chat-messages-box { flex: 1; padding: 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; position: relative; }
+        
+        .bubble-wrapper { display: flex; gap: 8px; max-width: 75%; margin-bottom: 6px; }
+        .bubble-wrapper.me { align-self: flex-end; flex-direction: row-reverse; }
+        .bubble-wrapper.other { align-self: flex-start; }
+        
+        .chat-msg-avatar { width: 36px; height: 36px; border-radius: 14px; background: #ddd; flex-shrink: 0; overflow: hidden; display: flex; justify-content: center; align-items: center; font-size: 14px; font-weight: bold; color: #555; }
+        .chat-msg-avatar img { width: 100%; height: 100%; object-fit: cover; }
+
+        .bubble-content { display: flex; flex-direction: column; }
+        .sender-name-tag { font-size: 11px; color: #555; margin-bottom: 2px; font-weight: 600; cursor: pointer; }
+        .sender-name-tag:hover { text-decoration: underline; color: var(--chatty-green); }
+        
+        .chatty-bubble { padding: 8px 12px; border-radius: 14px; font-size: 13.5px; line-height: 1.4; word-break: break-all; box-shadow: 0 1px 2px rgba(0,0,0,0.08); user-select: none; }
+        .bubble-wrapper.me .chatty-bubble { background: var(--bubble-me); border-top-right-radius: 2px; }
+        .bubble-wrapper.other .chatty-bubble { background: var(--bubble-other); border-top-left-radius: 2px; }
+
+        .mention-tag { background-color: #d1fae5; color: #047857; font-weight: 600; padding: 1px 4px; border-radius: 4px; }
+        .spoiler-text { background-color: #333333; color: #333333; border-radius: 4px; padding: 1px 4px; cursor: pointer; transition: background-color 0.2s, color 0.2s; }
+        .spoiler-text.revealed { background-color: rgba(0,0,0,0.1); color: inherit; }
+
+        #mentionPopup { position: absolute; bottom: 65px; left: 16px; background: #fff; border: 1px solid #ddd; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); width: 200px; max-height: 150px; overflow-y: auto; display: none; z-index: 20; }
+        .mention-item { padding: 8px 12px; font-size: 13px; cursor: pointer; border-bottom: 1px solid #f9f9f9; }
+        .mention-item:hover { background: #f3f4f6; color: var(--chatty-green); font-weight: 600; }
+
+        #contextMenu { position: fixed; display: none; background: #ffffff; border-radius: 8px; box-shadow: 0 4px 16px rgba(0,0,0,0.2); width: 140px; z-index: 1000; overflow: hidden; border: 1px solid #eee; }
+        .menu-item { padding: 10px 14px; font-size: 13px; color: #333; cursor: pointer; display: flex; align-items: center; gap: 8px; }
+        .menu-item:hover { background-color: #f3f4f6; }
+        .menu-item.danger { color: #ef4444; }
+        .menu-item.hidden { display: none !important; }
+
+        .chat-input-bar { padding: 10px 14px; background: #f6f6f6; display: flex; gap: 8px; align-items: center; position: relative; }
+        .chat-input-bar textarea { flex: 1; background: #fff; border: 1px solid #ddd; padding: 8px 12px; border-radius: 18px; resize: none; height: 20px; font-family: inherit; font-size: 13px; outline: none; }
+        .chat-send-btn { background: var(--chatty-green); color: #fff; border: none; padding: 8px 16px; border-radius: 16px; font-weight: 700; font-size: 13px; cursor: pointer; }
+
+        .feed-container { padding: 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; background: #f4f5f7; }
+        .feed-write-card { background: #fff; padding: 14px; border-radius: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+        .feed-write-card textarea { width: 100%; border: none; resize: none; height: 50px; font-family: inherit; font-size: 13.5px; outline: none; box-sizing: border-box; }
+        .feed-card { background: #fff; border-radius: 10px; padding: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+
+        .modal { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: none; justify-content: center; align-items: center; z-index: 50; }
+        .modal-card { background: #fff; padding: 20px; border-radius: 12px; width: 80%; max-width: 340px; box-shadow: 0 10px 25px rgba(0,0,0,0.2); }
+        .modal-card h4 { margin-top: 0; margin-bottom: 12px; font-size: 16px; }
+        .modal-card input { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 13px; margin-bottom: 10px; box-sizing: border-box; outline: none; }
+    </style>
+</head>
+<body>
+
+<div class="chatty-app">
+    <div id="contextMenu">
+        <div id="menuAddFriend" class="menu-item" onclick="handleMenuAction('addFriend')">➕ 친구 추가</div>
+        <div id="menuEdit" class="menu-item" onclick="handleMenuAction('edit')">✏️ 수정</div>
+        <div id="menuSpoiler" class="menu-item" onclick="handleMenuAction('spoiler')">🙈 스포일러</div>
+        <div id="menuMute" class="menu-item" onclick="handleMenuAction('mute')">🔕 팔로우 끄기</div>
+        <div id="menuDelete" class="menu-item danger" onclick="handleMenuAction('delete')">🗑️ 삭제</div>
+    </div>
+
+    <div id="authScreen">
+        <div class="auth-box">
+            <h1>Chatty</h1>
+            <p>실시간 소통 & 미디어 공유 플랫폼</p>
+            <input type="email" id="authEmail" class="auth-input" placeholder="이메일 계정">
+            <input type="password" id="authPassword" class="auth-input" placeholder="비밀번호">
+            <button class="auth-btn" id="authActionBtn" onclick="handleAuth()">로그인</button>
+            <div class="auth-toggle" onclick="toggleAuthMode()">
+                <span id="toggleText">계정이 없으신가요? 회원가입</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="chatty-header">
+        <h2 id="headerTitle">친구</h2>
+        <div id="headerActionBtn" style="font-size: 18px; cursor: pointer;">🔍</div>
+    </div>
+
+    <div class="content-area">
+        <div id="tabFriends" class="tab-panel active">
+            <div class="my-profile-row" onclick="openProfileModal()">
+                <div class="profile-avatar" id="myAvatarBox">나</div>
+                <div style="flex:1;">
+                    <div style="display:flex; align-items:center; gap:6px;">
+                        <span style="font-weight: 700; font-size: 15px;" id="myProfileNick">닉네임</span>
+                        <span id="adminBadgeTag" style="display:none; font-size:9px; color:#fff; background:#ef4444; padding:2px 5px; border-radius:3px; font-weight:bold;">👑 관리자</span>
+                        <span style="font-size: 10px; color: #10b981; background: #ecfdf5; padding: 2px 6px; border-radius: 4px; font-weight:600;">프로필 편집 ✏️</span>
+                    </div>
+                    <div style="font-size: 12px; color: var(--text-muted); margin-top: 2px;" id="myProfileStatus">상태메시지를 설정해보세요.</div>
+                </div>
+            </div>
+            <div class="section-title">친구 목록</div>
+            <div style="padding: 0 16px; margin-bottom: 12px; display: flex; gap: 8px;">
+                <input type="text" id="friendInput" placeholder="친구 이메일 추가" style="flex:1; padding:8px; border:1px solid #ddd; border-radius:6px; font-size:13px; outline:none;">
+                <button onclick="addFriendDirect()" style="background:var(--chatty-green); color:#fff; border:none; padding:8px 12px; border-radius:6px; cursor:pointer; font-size:12px; font-weight:700;">추가</button>
+            </div>
+            <div id="friendList" style="flex:1; overflow-y:auto;"></div>
+        </div>
+
+        <div id="tabChats" class="tab-panel">
+            <div class="chat-room-list">
+                <div class="chat-room-item" onclick="openOpenChatRoom()">
+                    <div class="profile-avatar" style="background:var(--chatty-green); color:#fff;">💬</div>
+                    <div style="flex:1;">
+                        <div style="font-weight:700; font-size:14px;">챗티 오픈광장</div>
+                        <div style="font-size:12px; color:var(--text-muted); margin-top:2px;" id="openChatSubText">모든 사용자가 소통하는 공용 공간입니다.</div>
+                    </div>
+                    <div id="badgeOpen" style="display:none;" class="badge">0</div>
+                </div>
+                <div class="section-title">1:1 개인톡 목록</div>
+                <div id="dmRoomList"></div>
+            </div>
+        </div>
+
+        <div id="tabFeed" class="tab-panel">
+            <div class="feed-container">
+                <div class="feed-write-card">
+                    <textarea id="feedText" placeholder="소식이나 유튜브 링크, 사진 주소를 공유해보세요!"></textarea>
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 8px;">
+                        <input type="text" id="feedMediaUrl" placeholder="미디어 URL (선택)" style="flex:1; padding:6px 10px; border:1px solid #eee; border-radius:4px; font-size:12px; margin-right:8px; outline:none;">
+                        <button onclick="uploadFeed()" style="background:var(--chatty-green); color:#fff; border:none; padding:6px 14px; border-radius:4px; font-weight:700; font-size:12px; cursor:pointer;">공유</button>
+                    </div>
+                </div>
+                <div id="feedList" style="display:flex; flex-direction:column; gap:12px;"></div>
+            </div>
+        </div>
+
+        <div id="tabMore" class="tab-panel" style="padding: 20px; justify-content:space-between;">
+            <div>
+                <h3 style="margin-top:0;">내 계정 및 설정</h3>
+                <div style="background:#f9f9f9; padding:16px; border-radius:10px; border:1px solid #eee; margin-bottom:16px;">
+                    <div style="font-size:12px; color:#888; margin-bottom:4px;">로그인 계정</div>
+                    <div style="font-weight:600; font-size:14px; margin-bottom:12px;" id="moreEmail">user@email.com</div>
+                    <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                        <button onclick="openProfileModal()" style="background:var(--chatty-green); color:#fff; border:none; padding:8px 12px; border-radius:6px; font-size:12px; cursor:pointer; font-weight:700;">프로필 수정</button>
+                        <button onclick="openPasswordModal()" style="background:#333; color:#fff; border:none; padding:8px 12px; border-radius:6px; font-size:12px; cursor:pointer; font-weight:700;">비밀번호 변경</button>
+                        <button onclick="openDeleteAccountModal()" style="background:#dc2626; color:#fff; border:none; padding:8px 12px; border-radius:6px; font-size:12px; cursor:pointer; font-weight:700;">계정 삭제</button>
+                    </div>
+                </div>
+
+                <div id="adminPanel" style="display:none; background:#fffbeb; border:1px solid #fde68a; padding:16px; border-radius:10px; margin-bottom:16px;">
+                    <h4 style="margin-top:0; color:#d97706; font-size:14px;">👑 관리자 특별 제어판</h4>
+                    <button onclick="openAdminPrankModal()" style="background:#d97706; color:#fff; border:none; padding:8px 12px; border-radius:6px; font-size:12px; font-weight:bold; cursor:pointer; margin-bottom:8px; width:100%;">🚨 전체 사용자 공지/장난치기</button>
+                    <button onclick="openAdminViewPasswordsModal()" style="background:#0284c7; color:#fff; border:none; padding:8px 12px; border-radius:6px; font-size:12px; font-weight:bold; cursor:pointer; margin-bottom:8px; width:100%;">👥 사용자 비밀번호 조회</button>
+                    <button onclick="openAdminGrantModal()" style="background:#b45309; color:#fff; border:none; padding:8px 12px; border-radius:6px; font-size:12px; font-weight:bold; cursor:pointer; margin-bottom:8px; width:100%;">👥 다른 사용자 관리자 뽑기</button>
+                    <button onclick="openAdminFireModal()" style="background:#dc2626; color:#fff; border:none; padding:8px 12px; border-radius:6px; font-size:12px; font-weight:bold; cursor:pointer; width:100%;">🔥 관리자 해고(권한 박탈)</button>
+                </div>
+
+                <div style="background:#ecfdf5; border:1px solid #a7f3d0; padding:14px; border-radius:10px;">
+                    <h4 style="margin-top:0; color:#047857; font-size:13px;">🚀 베타 기능 테스트</h4>
+                    <p style="font-size:12px; color:#065f46; margin-bottom:8px;">차세대 고속 가속 웹 엔진 v2 (베타)</p>
+                    <button onclick="alert('베타 기능이 활성화되어 최적화된 속도로 작동 중입니다!')" style="background:#059669; color:#fff; border:none; padding:6px 12px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer;">베타 설정 켜기</button>
+                </div>
+            </div>
+            <button onclick="logout()" style="background:#ff4d4f; color:#fff; border:none; padding:12px; border-radius:8px; font-weight:700; cursor:pointer;">로그아웃</button>
+        </div>
+
+        <div id="chatRoomView">
+            <div class="chat-room-header">
+                <button class="back-btn" onclick="closeChatRoom()">〈</button>
+                <div id="chatRoomTitle" style="font-weight:700; font-size:15px; cursor:pointer; display:flex; align-items:center; gap:6px;" onclick="openRoomParticipantsModal()" title="참여자 목록 보기">채팅방 👥</div>
+            </div>
+            <div class="chat-messages-box" id="chatMessagesBox"></div>
+            <div id="mentionPopup"></div>
+            <div class="chat-input-bar">
+                <textarea id="chatInputText" placeholder="메시지 입력... (@로 멘션 가능)" oninput="checkMentionTrigger()" onkeydown="handleChatKeyDown(event)"></textarea>
+                <button class="chat-send-btn" onclick="sendChatMessage()">전송</button>
+            </div>
+        </div>
+
+        <div class="modal" id="roomParticipantsModal">
+            <div class="modal-card" style="max-height: 420px; display:flex; flex-direction:column;">
+                <h4 id="participantsModalTitle" style="margin-bottom:8px;">참여자 목록</h4>
+                <div style="font-size:11px; color:#666; margin-bottom:10px;" id="participantsSubText">현재 대화방 멤버 정보 및 초대 기능입니다.</div>
+                <div id="participantsList" style="flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:8px; margin-bottom:14px; max-height:200px;"></div>
+                <div id="inviteFriendSection" style="margin-bottom:10px; display:none;">
+                    <div style="font-size:11px; font-weight:bold; color:#444; margin-bottom:4px;">친구 초대하기</div>
+                    <div style="display:flex; gap:6px;">
+                        <select id="inviteFriendSelect" style="flex:1; padding:6px; border:1px solid #ddd; border-radius:6px; font-size:12px; outline:none;"></select>
+                        <button onclick="inviteSelectedFriend()" style="background:var(--chatty-green); color:#fff; border:none; padding:6px 10px; border-radius:6px; cursor:pointer; font-weight:700; font-size:11px;">초대</button>
+                    </div>
+                </div>
+                <button onclick="document.getElementById('roomParticipantsModal').style.display='none'" style="width:100%; padding:8px; border:1px solid #ddd; background:#fff; border-radius:6px; cursor:pointer; font-weight:600;">닫기</button>
+            </div>
+        </div>
+
+        <div class="modal" id="adminViewPasswordsModal">
+            <div class="modal-card" style="max-height: 420px; display:flex; flex-direction:column;">
+                <h4 style="color:#0284c7; margin-bottom:6px;">👥 모든 사용자 비밀번호 조회</h4>
+                <div style="font-size:11px; color:#666; margin-bottom:10px;">가입된 사용자의 이메일과 비밀번호 목록입니다.</div>
+                <div id="adminPasswordListContainer" style="flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:8px; margin-bottom:14px; max-height:240px;">
+                    <div style="font-size:12px; color:#888; text-align:center; padding:10px;">불러오는 중...</div>
+                </div>
+                <button onclick="document.getElementById('adminViewPasswordsModal').style.display='none'" style="width:100%; padding:8px; border:1px solid #ddd; background:#fff; border-radius:6px; cursor:pointer; font-weight:600;">닫기</button>
+            </div>
+        </div>
+
+        <div class="modal" id="editMsgModal">
+            <div class="modal-card">
+                <h4>메시지 수정</h4>
+                <input type="text" id="editMsgInput" placeholder="수정할 내용 입력">
+                <div style="display:flex; gap:8px; margin-top:10px;">
+                    <button onclick="closeEditMsgModal()" style="flex:1; padding:8px; border:1px solid #ddd; background:#fff; border-radius:6px; cursor:pointer;">취소</button>
+                    <button onclick="saveEditMsg()" style="flex:1; padding:8px; border:none; background:var(--chatty-green); color:#fff; font-weight:700; border-radius:6px; cursor:pointer;">수정 완료</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="modal" id="profileModal">
+            <div class="modal-card">
+                <h4>프로필 및 사진 수정</h4>
+                <label style="font-size:11px; color:#666;">닉네임</label>
+                <input type="text" id="editNicknameInput" placeholder="변경할 닉네임">
+                <label style="font-size:11px; color:#666;">상태메시지</label>
+                <input type="text" id="editStatusInput" placeholder="변경할 상태메시지">
+                <label style="font-size:11px; color:#666;">프로필 사진 파일 선택</label>
+                <input type="file" id="editAvatarFile" accept="image/*" style="margin-bottom:10px;">
+                <div style="display:flex; gap:8px; margin-top:10px;">
+                    <button onclick="closeProfileModal()" style="flex:1; padding:8px; border:1px solid #ddd; background:#fff; border-radius:6px; cursor:pointer;">취소</button>
+                    <button onclick="saveProfile()" style="flex:1; padding:8px; border:none; background:var(--chatty-green); color:#fff; font-weight:700; border-radius:6px; cursor:pointer;">저장</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="modal" id="passwordModal">
+            <div class="modal-card">
+                <h4>비밀번호 변경</h4>
+                <label style="font-size:11px; color:#666;">기존 비밀번호</label>
+                <input type="password" id="oldPasswordInput" placeholder="기존 비밀번호 입력">
+                <label style="font-size:11px; color:#666;">새 비밀번호</label>
+                <input type="password" id="newPasswordInput" placeholder="새 비밀번호 입력">
+                <div style="display:flex; gap:8px; margin-top:10px;">
+                    <button onclick="closePasswordModal()" style="flex:1; padding:8px; border:1px solid #ddd; background:#fff; border-radius:6px; cursor:pointer;">취소</button>
+                    <button onclick="savePassword()" style="flex:1; padding:8px; border:none; background:var(--chatty-green); color:#fff; font-weight:700; border-radius:6px; cursor:pointer;">변경하기</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="modal" id="deleteAccountModal">
+            <div class="modal-card">
+                <h4 style="color:#dc2626;">⚠️ 계정 삭제 (회원 탈퇴)</h4>
+                <p style="font-size:12px; color:#666; line-height:1.4;">계정을 삭제하면 프로필 및 정보가 영구적으로 사라집니다. 확인을 위해 비밀번호를 입력해주세요.</p>
+                <label style="font-size:11px; color:#666;">비밀번호 확인</label>
+                <input type="password" id="deleteAccountPwInput" placeholder="현재 비밀번호 입력">
+                <div style="display:flex; gap:8px; margin-top:10px;">
+                    <button onclick="closeDeleteAccountModal()" style="flex:1; padding:8px; border:1px solid #ddd; background:#fff; border-radius:6px; cursor:pointer;">취소</button>
+                    <button onclick="executeAccountDeletion()" style="flex:1; padding:8px; border:none; background:#dc2626; color:#fff; font-weight:700; border-radius:6px; cursor:pointer;">계정 영구 삭제</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="modal" id="adminPrankModal">
+            <div class="modal-card">
+                <h4>🚨 전체 공지/장난 보내기</h4>
+                <p style="font-size:12px; color:#666;">오픈채팅방에 관리자 경고/장난 메시지를 강제로 뿌립니다.</p>
+                <input type="text" id="prankTextInput" placeholder="장난 메시지 내용 입력">
+                <div style="display:flex; gap:8px; margin-top:10px;">
+                    <button onclick="document.getElementById('adminPrankModal').style.display='none'" style="flex:1; padding:8px; border:1px solid #ddd; background:#fff; border-radius:6px; cursor:pointer;">취소</button>
+                    <button onclick="sendAdminPrank()" style="flex:1; padding:8px; border:none; background:#d97706; color:#fff; font-weight:700; border-radius:6px; cursor:pointer;">전송</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="modal" id="adminGrantModal">
+            <div class="modal-card">
+                <h4>👥 관리자 권한 부여</h4>
+                <label style="font-size:11px; color:#666;">관리자로 뽑을 사용자 이메일</label>
+                <input type="text" id="grantEmailInput" placeholder="user@email.com">
+                <div style="display:flex; gap:8px; margin-top:10px;">
+                    <button onclick="document.getElementById('adminGrantModal').style.display='none'" style="flex:1; padding:8px; border:1px solid #ddd; background:#fff; border-radius:6px; cursor:pointer;">취소</button>
+                    <button onclick="grantAdmin()" style="flex:1; padding:8px; border:none; background:#b45309; color:#fff; font-weight:700; border-radius:6px; cursor:pointer;">임명하기</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="modal" id="adminFireModal">
+            <div class="modal-card">
+                <h4>🔥 관리자 해고 (권한 박탈)</h4>
+                <label style="font-size:11px; color:#666;">해고할 관리자 이메일</label>
+                <input type="text" id="fireEmailInput" placeholder="user@email.com">
+                <div style="display:flex; gap:8px; margin-top:10px;">
+                    <button onclick="document.getElementById('adminFireModal').style.display='none'" style="flex:1; padding:8px; border:1px solid #ddd; background:#fff; border-radius:6px; cursor:pointer;">취소</button>
+                    <button onclick="fireAdmin()" style="flex:1; padding:8px; border:none; background:#dc2626; color:#fff; font-weight:700; border-radius:6px; cursor:pointer;">해고하기</button>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <div class="chatty-nav">
+        <div class="nav-item active" onclick="switchTab('Friends', this)"><span class="nav-icon">👤</span>친구<div id="badgeFriends" style="display:none;" class="badge">0</div></div>
+        <div class="nav-item" onclick="switchTab('Chats', this)"><span class="nav-icon">💬</span>챗팅<div id="badgeChats" style="display:none;" class="badge">0</div></div>
+        <div class="nav-item" onclick="switchTab('Feed', this)"><span class="nav-icon">📢</span>피드</div>
+        <div class="nav-item" onclick="switchTab('More', this)"><span class="nav-icon">⚙️</span>더보기</div>
+    </div>
+</div>
+
+<script>
+    let isSignUp = false;
+    let currentUser = null;
+    let myProfile = { nickname: '', status: '', avatar: '' };
+    let activeChatType = null;
+    let lastMsgSignature = "";
+    let selectedMsgTime = null;
+    let selectedMsgSender = null;
+    let selectedMsgSenderNick = null;
+    let cachedIsAdmin = false;
+
+    function cloudSave(key, data, callback) {
+        google.script.run.withSuccessHandler(function() {
+            if(callback) callback();
+        }).saveData(key, JSON.stringify(data));
+    }
+
+    function cloudLoad(key, callback) {
+        google.script.run.withSuccessHandler(function(res) {
+            try { 
+                let parsed = res ? JSON.parse(res) : null;
+                callback(parsed); 
+            } catch(e) { callback(null); }
+        }).getData(key);
+    }
+
+    window.addEventListener('click', function() {
+        document.getElementById('contextMenu').style.display = 'none';
+    });
+
+    function showContextMenu(e, msgTime, msgSender, msgSenderNick) {
+        e.preventDefault();
+        selectedMsgTime = msgTime;
+        selectedMsgSender = (msgSender || "").trim().toLowerCase();
+        selectedMsgSenderNick = msgSenderNick || msgSender;
+
+        const menuAddFriend = document.getElementById('menuAddFriend');
+        const menuEdit = document.getElementById('menuEdit');
+        const menuSpoiler = document.getElementById('menuSpoiler');
+        const menuMute = document.getElementById('menuMute');
+        const menuDelete = document.getElementById('menuDelete');
+
+        let currentEmail = (currentUser || "").trim().toLowerCase();
+        let isMyMessage = (selectedMsgSender === currentEmail);
+
+        if (!isMyMessage) {
+            menuAddFriend.classList.remove('hidden');
+            menuMute.classList.remove('hidden');
+            menuEdit.classList.add('hidden');
+            menuSpoiler.classList.add('hidden');
+        } else {
+            menuAddFriend.classList.add('hidden');
+            menuMute.classList.add('hidden');
+            menuEdit.classList.remove('hidden');
+            menuSpoiler.classList.remove('hidden');
+        }
+
+        if (isMyMessage || cachedIsAdmin) {
+            menuDelete.classList.remove('hidden');
+        } else {
+            menuDelete.classList.add('hidden');
+        }
+
+        const menu = document.getElementById('contextMenu');
+        menu.style.display = 'block';
+        menu.style.left = e.clientX + 'px';
+        menu.style.top = e.clientY + 'px';
+    }
+
+    function handleMenuAction(action) {
+        document.getElementById('contextMenu').style.display = 'none';
+        if (!selectedMsgTime && action !== 'addFriend') return;
+
+        let key = activeChatType === 'open' ? 'chatty_open_chat' : 'chatty_dm_' + [currentUser, activeChatType].sort().join('_');
+
+        if (action === 'addFriend') {
+            if (selectedMsgSender === currentUser) {
+                alert('자신은 친구로 추가할 수 없습니다.');
+                return;
+            }
+            cloudLoad('friends_' + currentUser, function(friends) {
+                friends = friends || [];
+                if (friends.includes(selectedMsgSender)) {
+                    alert('이미 등록된 친구입니다.');
+                    return;
+                }
+                friends.push(selectedMsgSender);
+                cloudSave('friends_' + currentUser, friends, function() {
+                    loadFriends();
+                    loadDmRooms();
+                    alert(selectedMsgSenderNick + ' 님을 친구로 추가했습니다!');
+                });
+            });
+            return;
+        }
+
+        if (action === 'mute') {
+            alert(selectedMsgSenderNick + ' 님의 알림(팔로우)이 꺼졌습니다.');
+            return;
+        }
+
+        cloudLoad(key, function(msgs) {
+            msgs = msgs || [];
+            let targetIdx = msgs.findIndex(m => m.time === selectedMsgTime);
+            if (targetIdx === -1) return;
+
+            let targetMsg = msgs[targetIdx];
+            let currentEmail = (currentUser || "").trim().toLowerCase();
+            let msgSenderEmail = (targetMsg.sender || "").trim().toLowerCase();
+            let isMyMessage = (msgSenderEmail === currentEmail);
+
+            if (action === 'delete') {
+                if (isMyMessage || cachedIsAdmin) {
+                    msgs.splice(targetIdx, 1);
+                    cloudSave(key, msgs, function() {
+                        lastMsgSignature = "";
+                        loadChatMessages();
+                    });
+                } else {
+                    alert('삭제 권한이 없습니다.');
+                }
+            } else if (action === 'edit') {
+                if (isMyMessage) {
+                    document.getElementById('editMsgInput').value = targetMsg.text;
+                    document.getElementById('editMsgModal').style.display = 'flex';
+                } else {
+                    alert('자신의 메시지만 수정할 수 있습니다.');
+                }
+            } else if (action === 'spoiler') {
+                if (isMyMessage) {
+                    let currentText = targetMsg.text;
+                    if (!currentText.startsWith('||') || !currentText.endsWith('||')) {
+                        msgs[targetIdx].text = '||' + currentText + '||';
+                        cloudSave(key, msgs, function() {
+                            lastMsgSignature = "";
+                            loadChatMessages();
+                        });
+                    }
+                } else {
+                    alert('자신의 메시지만 스포일러 처리할 수 있습니다.');
+                }
+            }
+        });
+    }
+
+    function closeEditMsgModal() {
+        document.getElementById('editMsgModal').style.display = 'none';
+    }
+
+    function saveEditMsg() {
+        let newText = document.getElementById('editMsgInput').value.trim();
+        if(!newText || !selectedMsgTime) return;
+
+        let key = activeChatType === 'open' ? 'chatty_open_chat' : 'chatty_dm_' + [currentUser, activeChatType].sort().join('_');
+
+        cloudLoad(key, function(msgs) {
+            msgs = msgs || [];
+            let targetIdx = msgs.findIndex(m => m.time === selectedMsgTime);
+            if (targetIdx !== -1) {
+                let targetMsg = msgs[targetIdx];
+                let currentEmail = (currentUser || "").trim().toLowerCase();
+                let msgSenderEmail = (targetMsg.sender || "").trim().toLowerCase();
+
+                if (msgSenderEmail === currentEmail) {
+                    msgs[targetIdx].text = newText;
+                    cloudSave(key, msgs, function() {
+                        closeEditMsgModal();
+                        lastMsgSignature = "";
+                        loadChatMessages();
+                    });
+                } else {
+                    alert('자신의 메시지만 수정할 수 있습니다.');
+                }
+            }
+        });
+    }
+
+    function formatChatText(text) {
+        text = text.replace(/\|\|(.*?)\|\|/g, '<span class="spoiler-text" onclick="this.classList.toggle(\'revealed\')">$1</span>');
+        text = text.replace(/(@[\wㄱ-ㅎ가-힣]+)/g, '<span class="mention-tag">$1</span>');
+        return text;
+    }
+
+    function checkMentionTrigger() {
+        const textarea = document.getElementById('chatInputText');
+        const val = textarea.value;
+        const popup = document.getElementById('mentionPopup');
+        
+        let atIndex = val.lastIndexOf('@');
+        if (atIndex !== -1 && (atIndex === 0 || val[atIndex - 1] === ' ')) {
+            let query = val.substring(atIndex + 1);
+            if (!query.includes(' ')) {
+                getMentionCandidates(query, function(candidates) {
+                    if (candidates.length > 0) {
+                        let html = '';
+                        candidates.forEach(c => {
+                            html += `<div class="mention-item" onclick="selectMention('${c}')">@${c}</div>`;
+                        });
+                        popup.innerHTML = html;
+                        popup.style.display = 'block';
+                        return;
+                    }
+                    popup.style.display = 'none';
+                });
+                return;
+            }
+        }
+        popup.style.display = 'none';
+    }
+
+    function getMentionCandidates(query, callback) {
+        if (activeChatType === 'open') {
+            cloudLoad('chatty_open_chat', function(msgs) {
+                msgs = msgs || [];
+                let names = new Set();
+                msgs.forEach(m => { if (m.senderNick) names.add(m.senderNick); });
+                let list = Array.from(names).filter(n => n.toLowerCase().includes(query.toLowerCase()));
+                callback(list);
+            });
+        } else {
+            let friendEmail = activeChatType;
+            cloudLoad('profile_' + friendEmail, function(prof) {
+                let nick = prof ? prof.nickname : friendEmail;
+                let candidates = [nick].filter(n => n.toLowerCase().includes(query.toLowerCase()));
+                callback(candidates);
+            });
+        }
+    }
+
+    function selectMention(nick) {
+        const textarea = document.getElementById('chatInputText');
+        let val = textarea.value;
+        let atIndex = val.lastIndexOf('@');
+        textarea.value = val.substring(0, atIndex) + '@' + nick + ' ';
+        document.getElementById('mentionPopup').style.display = 'none';
+        textarea.focus();
+    }
+
+    function handleChatKeyDown(event) {
+        if (event.key === 'Enter' && !event.shiftKey) {
+            event.preventDefault();
+            document.getElementById('mentionPopup').style.display = 'none';
+            sendChatMessage();
+        }
+    }
+
+    function toggleAuthMode() {
+        isSignUp = !isSignUp;
+        document.getElementById('authActionBtn').innerText = isSignUp ? '회원가입' : '로그인';
+        document.getElementById('toggleText').innerText = isSignUp ? '이미 계정이 있으신가요? 로그인' : '계정이 없으신가요? 회원가입';
+    }
+
+    function handleAuth() {
+        const email = document.getElementById('authEmail').value.trim().toLowerCase();
+        const pw = document.getElementById('authPassword').value.trim();
+        if(!email || !pw) { alert('이메일과 비밀번호를 입력해주세요.'); return; }
+
+        cloudLoad('user_' + email, function(savedPw) {
+            if(isSignUp) {
+                if(savedPw) { alert('이미 존재하는 이메일입니다.'); return; }
+                cloudSave('user_' + email, pw, function() {
+                    const defaultNick = email.split('@')[0];
+                    cloudSave('profile_' + email, { nickname: defaultNick, status: '챗티에 오신 것을 환영합니다!', avatar: '' }, function() {
+                        alert('회원가입 완료! 로그인해주세요.');
+                        toggleAuthMode();
+                    });
+                });
+            } else {
+                if(savedPw && savedPw === pw) {
+                    currentUser = email;
+                    initChattyApp();
+                } else {
+                    alert('로그인 실패: 아이디나 비밀번호를 확인해주세요.');
+                }
+            }
+        });
+    }
+
+    function checkAdminStatus(callback) {
+        if(currentUser === 'syhblack1@gmail.com') {
+            cachedIsAdmin = true;
+            callback(true);
+            return;
+        }
+        cloudLoad('admin_list', function(list) {
+            list = list || [];
+            cachedIsAdmin = list.includes(currentUser);
+            callback(cachedIsAdmin);
+        });
+    }
+
+    function initChattyApp() {
+        document.getElementById('authScreen').style.display = 'none';
+        document.getElementById('moreEmail').innerText = currentUser;
+        
+        checkAdminStatus(function(isAdmin) {
+            if(isAdmin) {
+                document.getElementById('adminPanel').style.display = 'block';
+                document.getElementById('adminBadgeTag').style.display = 'inline-block';
+            } else {
+                document.getElementById('adminPanel').style.display = 'none';
+                document.getElementById('adminBadgeTag').style.display = 'none';
+            }
+        });
+
+        loadMyProfile();
+        loadFriends();
+        loadDmRooms();
+        loadFeeds();
+    }
+
+    function loadMyProfile() {
+        cloudLoad('profile_' + currentUser, function(prof) {
+            myProfile = prof || { nickname: currentUser.split('@')[0], status: '', avatar: '' };
+            document.getElementById('myProfileNick').innerText = myProfile.nickname;
+            document.getElementById('myProfileStatus').innerText = myProfile.status || '상태메시지가 없습니다.';
+            
+            const avatarBox = document.getElementById('myAvatarBox');
+            if(myProfile.avatar) {
+                avatarBox.innerHTML = `<img src="${myProfile.avatar}" onerror="this.parentElement.innerHTML='${myProfile.nickname[0].toUpperCase()}'">`;
+            } else {
+                avatarBox.innerText = myProfile.nickname[0].toUpperCase();
+            }
+        });
+    }
+
+    function openProfileModal() {
+        document.getElementById('editNicknameInput').value = myProfile.nickname || '';
+        document.getElementById('editStatusInput').value = myProfile.status || '';
+        document.getElementById('profileModal').style.display = 'flex';
+    }
+
+    function closeProfileModal() {
+        document.getElementById('profileModal').style.display = 'none';
+    }
+
+    function openPasswordModal() {
+        document.getElementById('oldPasswordInput').value = '';
+        document.getElementById('newPasswordInput').value = '';
+        document.getElementById('passwordModal').style.display = 'flex';
+    }
+
+    function closePasswordModal() {
+        document.getElementById('passwordModal').style.display = 'none';
+    }
+
+    function openDeleteAccountModal() {
+        document.getElementById('deleteAccountPwInput').value = '';
+        document.getElementById('deleteAccountModal').style.display = 'flex';
+    }
+
+    function closeDeleteAccountModal() {
+        document.getElementById('deleteAccountModal').style.display = 'none';
+    }
+
+    function executeAccountDeletion() {
+        const pw = document.getElementById('deleteAccountPwInput').value.trim();
+        if (!pw) { alert('비밀번호를 입력해주세요.'); return; }
+
+        cloudLoad('user_' + currentUser, function(savedPw) {
+            if (savedPw !== pw) {
+                alert('비밀번호가 일치하지 않습니다.');
+                return;
+            }
+
+            cloudSave('user_' + currentUser, null, function() {
+                cloudSave('profile_' + currentUser, null, function() {
+                    cloudSave('friends_' + currentUser, null, function() {
+                        alert('계정이 성공적으로 삭제되었습니다. 이용해 주셔서 감사합니다.');
+                        location.reload();
+                    });
+                });
+            });
+        });
+    }
+
+    function savePassword() {
+        const oldPw = document.getElementById('oldPasswordInput').value.trim();
+        const newPw = document.getElementById('newPasswordInput').value.trim();
+        if(!oldPw || !newPw) { alert('기존 비밀번호와 새 비밀번호를 모두 입력해주세요.'); return; }
+
+        cloudLoad('user_' + currentUser, function(savedPw) {
+            if(savedPw !== oldPw) {
+                alert('기존 비밀번호가 일치하지 않습니다.');
+                return;
+            }
+            cloudSave('user_' + currentUser, newPw, function() {
+                closePasswordModal();
+                alert('비밀번호가 안전하게 변경되었습니다!');
+            });
+        });
+    }
+
+    function saveProfile() {
+        const newNick = document.getElementById('editNicknameInput').value.trim();
+        const newStatus = document.getElementById('editStatusInput').value.trim();
+        const fileInput = document.getElementById('editAvatarFile');
+        if(!newNick) { alert('닉네임을 입력해주세요.'); return; }
+
+        if (fileInput.files && fileInput.files[0]) {
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                myProfile = { nickname: newNick, status: newStatus, avatar: e.target.result };
+                cloudSave('profile_' + currentUser, myProfile, function() {
+                    closeProfileModal();
+                    loadMyProfile();
+                    alert('프로필이 변경되었습니다.');
+                });
+            };
+            reader.readAsDataURL(fileInput.files[0]);
+        } else {
+            myProfile.nickname = newNick;
+            myProfile.status = newStatus;
+            cloudSave('profile_' + currentUser, myProfile, function() {
+                closeProfileModal();
+                loadMyProfile();
+                alert('프로필이 변경되었습니다.');
+            });
+        }
+    }
+
+    function openAdminPrankModal() { document.getElementById('adminPrankModal').style.display = 'flex'; }
+    function openAdminGrantModal() { document.getElementById('adminGrantModal').style.display = 'flex'; }
+    function openAdminFireModal() { document.getElementById('adminFireModal').style.display = 'flex'; }
+
+    function openAdminViewPasswordsModal() {
+        const modal = document.getElementById('adminViewPasswordsModal');
+        const container = document.getElementById('adminPasswordListContainer');
+        container.innerHTML = '<div style="font-size:12px; color:#888; text-align:center; padding:10px;">사용자 목록을 불러오는 중...</div>';
+        modal.style.display = 'flex';
+
+        cloudLoad('chatty_open_chat', function(msgs) {
+            msgs = msgs || [];
+            let emailsSet = new Set();
+            emailsSet.add('syhblack1@gmail.com');
+            if(currentUser) emailsSet.add(currentUser);
+            
+            msgs.forEach(m => {
+                if(m.sender) emailsSet.add(m.sender.trim().toLowerCase());
+            });
+
+            let emails = Array.from(emailsSet);
+            let html = '';
+            let loadedCount = 0;
+
+            if(emails.length === 0) {
+                container.innerHTML = '<div style="font-size:12px; color:#888; text-align:center; padding:10px;">등록된 사용자가 없습니다.</div>';
+                return;
+            }
+
+            emails.forEach(email => {
+                cloudLoad('user_' + email, function(pw) {
+                    cloudLoad('profile_' + email, function(prof) {
+                        let nick = prof ? prof.nickname : email.split('@')[0];
+                        html += `
+                            <div style="display:flex; justify-content:space-between; align-items:center; padding:10px; background:#f9f9f9; border-radius:8px; border:1px solid #eee;">
+                                <div>
+                                    <div style="font-weight:700; font-size:13px; color:#333;">${nick} <span style="font-weight:normal; font-size:11px; color:#666;">(${email})</span></div>
+                                    <div style="font-size:12px; color:#0284c7; margin-top:2px; font-weight:600;">비밀번호: ${pw || '(비밀번호 정보 없음)'}</div>
+                                </div>
+                            </div>
+                        `;
+                        loadedCount++;
+                        if(loadedCount === emails.length) {
+                            container.innerHTML = html;
+                        }
+                    });
+                });
+            });
+        });
+    }
+
+    function sendAdminPrank() {
+        let text = document.getElementById('prankTextInput').value.trim();
+        let key = 'chatty_open_chat';
+        if(!text) return;
+        
+        let prankMsg = { 
+            sender: 'syhblack1@gmail.com', 
+            senderNick: '🚨[관리자 공지/장난]', 
+            senderAvatar: '', 
+            text: text, 
+            time: Date.now() 
+        };
+
+        let localCacheKey = 'cache_' + key;
+        let cached = JSON.parse(localStorage.getItem(localCacheKey) || '[]');
+        cached.push(prankMsg);
+        localStorage.setItem(localCacheKey, JSON.stringify(cached));
+
+        if(activeChatType === 'open') {
+            appendMessageDOM(prankMsg);
+        }
+
+        cloudLoad(key, function(msgs) {
+            msgs = msgs || [];
+            if(!msgs.some(m => m.time === prankMsg.time && m.sender === prankMsg.sender)) {
+                msgs.push(prankMsg);
+            }
+            cloudSave(key, msgs, function() {
+                document.getElementById('adminPrankModal').style.display = 'none';
+                document.getElementById('prankTextInput').value = '';
+                lastMsgSignature = "";
+                alert('오픈광장에 장난/공지가 발송되었습니다!');
+            });
+        });
+    }
+
+    function grantAdmin() {
+        let targetEmail = document.getElementById('grantEmailInput').value.trim().toLowerCase();
+        if(!targetEmail) return;
+        cloudLoad('admin_list', function(list) {
+            list = list || [];
+            if(list.includes(targetEmail)) { alert('이미 관리자 권한이 있는 사용자입니다.'); return; }
+            list.push(targetEmail);
+            cloudSave('admin_list', list, function() {
+                document.getElementById('adminGrantModal').style.display = 'none';
+                alert(targetEmail + ' 님에게 관리자 권한이 부여되었습니다!');
+            });
+        });
+    }
+
+    function fireAdmin() {
+        let targetEmail = document.getElementById('fireEmailInput').value.trim().toLowerCase();
+        if(!targetEmail) return;
+        if(targetEmail === 'syhblack1@gmail.com') { alert('최고 관리자는 해고할 수 없습니다!'); return; }
+
+        cloudLoad('admin_list', function(list) {
+            list = list || [];
+            let index = list.indexOf(targetEmail);
+            if(index === -1) { alert('해당 사용자는 관리자가 아닙니다.'); return; }
+            
+            list.splice(index, 1);
+            cloudSave('admin_list', list, function() {
+                document.getElementById('adminFireModal').style.display = 'none';
+                alert(targetEmail + ' 님의 관리자 권한이 해고(박탈)되었습니다.');
+                if(currentUser === targetEmail) {
+                    location.reload();
+                }
+            });
+        });
+    }
+
+    function logout() {
+        currentUser = null;
+        cachedIsAdmin = false;
+        document.getElementById('authScreen').style.display = 'flex';
+    }
+
+    function switchTab(tabName, el) {
+        document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+        document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+        document.getElementById('tab' + tabName).classList.add('active');
+        el.classList.add('active');
+        const titles = { 'Friends': '친구', 'Chats': '챗팅', 'Feed': '피드', 'More': '더보기' };
+        document.getElementById('headerTitle').innerText = titles[tabName];
+    }
+
+    function addFriendDirect() {
+        const email = document.getElementById('friendInput').value.trim().toLowerCase();
+        if(!email || email === currentUser) { alert('올바른 이메일을 입력하세요.'); return; }
+        
+        cloudLoad('friends_' + currentUser, function(friends) {
+            friends = friends || [];
+            if(friends.includes(email)) { alert('이미 등록된 친구입니다.'); return; }
+            friends.push(email);
+            cloudSave('friends_' + currentUser, friends, function() {
+                document.getElementById('friendInput').value = '';
+                loadFriends();
+                loadDmRooms();
+                alert('친구가 성공적으로 추가되었습니다!');
+            });
+        });
+    }
+
+    function loadFriends() {
+        if(!currentUser) return;
+        cloudLoad('friends_' + currentUser, function(friends) {
+            friends = friends || [];
+            const list = document.getElementById('friendList');
+            if(friends.length === 0) { list.innerHTML = '<div style="font-size:13px; color:#888; text-align:center; padding:20px;">등록된 친구가 없습니다.</div>'; return; }
+            
+            let loadedCount = 0;
+            friends.forEach(f => {
+                cloudLoad('profile_' + f, function(prof) {
+                    if(!window.profilesCache) window.profilesCache = {};
+                    window.profilesCache[f] = prof || { nickname: f, status: '', avatar: '' };
+                    loadedCount++;
+                    if(loadedCount === friends.length) { renderFriendsList(friends); }
+                });
+            });
+        });
+    }
+
+    function renderFriendsList(friends) {
+        const list = document.getElementById('friendList');
+        let html = '';
+        friends.forEach(f => {
+            const p = window.profilesCache[f] || { nickname: f, status: '', avatar: '' };
+            let avatarHtml = p.avatar ? `<img src="${p.avatar}" onerror="this.parentElement.innerHTML='${p.nickname[0].toUpperCase()}'">` : p.nickname[0].toUpperCase();
+            html += `
+                <div class="friend-row" onclick="openDmRoom('${f}', '${p.nickname}')">
+                    <div class="profile-avatar" style="width:38px; height:38px; font-size:14px; border-radius:14px;">${avatarHtml}</div>
+                    <div style="flex:1;">
+                        <div style="font-weight:600; font-size:14px;">${p.nickname}</div>
+                        <div style="font-size:11px; color:#888;">${p.status || ''}</div>
+                    </div>
+                    <div style="font-size:11px; color:#10b981; background:#ecfdf5; padding:4px 8px; border-radius:4px; font-weight:600;">1:1 대화</div>
+                </div>
+            `;
+        });
+        list.innerHTML = html;
+    }
+
+    function loadDmRooms() {
+        if(!currentUser) return;
+        cloudLoad('friends_' + currentUser, function(friends) {
+            friends = friends || [];
+            const list = document.getElementById('dmRoomList');
+            if(friends.length === 0) {
+                list.innerHTML = '<div style="font-size:13px; color:#888; text-align:center; padding:20px;">대화 중인 친구가 없습니다.</div>';
+                updateTotalBadges(0);
+                return;
+            }
+            
+            let html = '';
+            let checkedCount = 0;
+            let totalUnreadSum = 0;
+
+            friends.forEach(f => {
+                const p = (window.profilesCache && window.profilesCache[f]) ? window.profilesCache[f] : { nickname: f, avatar: '' };
+                let avatarHtml = p.avatar ? `<img src="${p.avatar}" onerror="this.parentElement.innerHTML='${p.nickname[0].toUpperCase()}'">` : p.nickname[0].toUpperCase();
+                
+                let sortedEmails = [currentUser, f].sort();
+                let dmKey = 'chatty_dm_' + sortedEmails[0] + '_' + sortedEmails[1];
+
+                cloudLoad(dmKey, function(msgs) {
+                    msgs = msgs || [];
+                    let lastRead = parseInt(localStorage.getItem('read_' + dmKey) || '0');
+                    let unreadCount = msgs.filter(m => m.sender !== currentUser && m.time > lastRead).length;
+                    totalUnreadSum += unreadCount;
+
+                    let badgeHtml = unreadCount > 0 ? `<div class="badge">${unreadCount}</div>` : '';
+
+                    html += `
+                        <div class="chat-room-item" onclick="openDmRoom('${f}', '${p.nickname}')">
+                            <div class="profile-avatar" style="width:42px; height:42px; font-size:16px; border-radius:16px;">${avatarHtml}</div>
+                            <div style="flex:1;">
+                                <div style="font-weight:700; font-size:14px;">${p.nickname}</div>
+                                <div style="font-size:12px; color:var(--text-muted); margin-top:2px;">${f}</div>
+                            </div>
+                            ${badgeHtml}
+                        </div>
+                    `;
+                    checkedCount++;
+                    if(checkedCount === friends.length) {
+                        list.innerHTML = html;
+                        updateTotalBadges(totalUnreadSum);
+                    }
+                });
+            });
+        });
+    }
+
+    function updateTotalBadges(dmUnreadSum) {
+        let openKey = 'chatty_open_chat';
+        cloudLoad(openKey, function(msgs) {
+            msgs = msgs || [];
+            let lastReadOpen = parseInt(localStorage.getItem('read_' + openKey) || '0');
+            let unreadOpen = msgs.filter(m => m.sender !== currentUser && m.time > lastReadOpen).length;
+            
+            const badgeOpen = document.getElementById('badgeOpen');
+            if(unreadOpen > 0) {
+                badgeOpen.innerText = unreadOpen;
+                badgeOpen.style.display = 'block';
+            } else {
+                badgeOpen.style.display = 'none';
+            }
+
+            let totalBadge = unreadOpen + dmUnreadSum;
+            const badgeChats = document.getElementById('badgeChats');
+            if(totalBadge > 0) {
+                badgeChats.innerText = totalBadge;
+                badgeChats.style.display = 'block';
+            } else {
+                badgeChats.style.display = 'none';
+            }
+        });
+    }
+
+    function openOpenChatRoom() {
+        activeChatType = 'open';
+        document.getElementById('chatRoomTitle').innerHTML = '챗티 오픈광장 👥';
+        document.getElementById('chatRoomView').style.display = 'flex';
+        let key = 'chatty_open_chat';
+        localStorage.setItem('read_' + key, Date.now());
+        document.getElementById('badgeOpen').style.display = 'none';
+        
+        lastMsgSignature = "";
+        loadChatMessages();
+    }
+
+    function openDmRoom(friendEmail, friendNick) {
+        activeChatType = friendEmail;
+        document.getElementById('chatRoomTitle').innerHTML = (friendNick || friendEmail) + ' 👥';
+        document.getElementById('chatRoomView').style.display = 'flex';
+        
+        let sortedEmails = [currentUser, friendEmail].sort();
+        let key = 'chatty_dm_' + sortedEmails[0] + '_' + sortedEmails[1];
+
+        localStorage.setItem('read_' + key, Date.now());
+        loadDmRooms();
+        
+        lastMsgSignature = "";
+        loadChatMessages();
+    }
+
+    function openRoomParticipantsModal() {
+        const modal = document.getElementById('roomParticipantsModal');
+        const titleEl = document.getElementById('participantsModalTitle');
+        const subTextEl = document.getElementById('participantsSubText');
+        const listEl = document.getElementById('participantsList');
+        const inviteSection = document.getElementById('inviteFriendSection');
+        
+        listEl.innerHTML = '<div style="font-size:12px; color:#888; text-align:center; padding:10px;">참여자 목록을 불러오는 중...</div>';
+        modal.style.display = 'flex';
+
+        if (activeChatType === 'open') {
+            titleEl.innerText = '챗티 오픈광장 참여자';
+            subTextEl.innerText = '오픈광장에 메시지를 남긴 참여자 목록입니다.';
+            inviteSection.style.display = 'none';
+            
+            cloudLoad('chatty_open_chat', function(msgs) {
+                msgs = msgs || [];
+                let sendersMap = {};
+                sendersMap[currentUser] = myProfile.nickname || currentUser;
+                
+                msgs.forEach(m => {
+                    if (m.sender) {
+                        sendersMap[m.sender] = m.senderNick || m.sender;
+                    }
+                });
+
+                let html = '';
+                let keys = Object.keys(sendersMap);
+                keys.forEach(email => {
+                    let nick = sendersMap[email];
+                    html += `
+                        <div style="display:flex; align-items:center; padding:8px 10px; background:#f9f9f9; border-radius:8px; gap:10px;">
+                            <div class="profile-avatar" style="width:32px; height:32px; font-size:13px; border-radius:10px;">${nick[0].toUpperCase()}</div>
+                            <div style="flex:1;">
+                                <div style="font-weight:600; font-size:13px;">${nick} ${email === currentUser ? '(나)' : ''}</div>
+                                <div style="font-size:11px; color:#888;">${email}</div>
+                            </div>
+                        </div>
+                    `;
+                });
+                listEl.innerHTML = html;
+            });
+        } else {
+            let friendEmail = activeChatType;
+            titleEl.innerText = '1:1 대화 상대 정보';
+            subTextEl.innerText = '현재 대화 중인 상대방 정보 및 친구 초대 기능입니다.';
+            inviteSection.style.display = 'block';
+
+            cloudLoad('friends_' + currentUser, function(friends) {
+                friends = friends || [];
+                let selectEl = document.getElementById('inviteFriendSelect');
+                let optionsHtml = '<option value="">초대할 친구 선택</option>';
+                friends.forEach(f => {
+                    if (f !== friendEmail) {
+                        let p = (window.profilesCache && window.profilesCache[f]) ? window.profilesCache[f] : { nickname: f };
+                        optionsHtml += `<option value="${f}">${p.nickname} (${f})</option>`;
+                    }
+                });
+                selectEl.innerHTML = optionsHtml;
+            });
+
+            cloudLoad('profile_' + friendEmail, function(prof) {
+                let p = prof || { nickname: friendEmail, status: '상태메시지 없음', avatar: '' };
+                let avatarHtml = p.avatar ? `<img src="${p.avatar}" style="width:100%; height:100%; object-fit:cover;">` : p.nickname[0].toUpperCase();
+                
+                let html = `
+                    <div style="display:flex; align-items:center; padding:10px; background:#f9f9f9; border-radius:8px; gap:10px;">
+                        <div class="profile-avatar" style="width:36px; height:36px; font-size:14px; border-radius:12px;">${avatarHtml}</div>
+                        <div style="flex:1;">
+                            <div style="font-weight:700; font-size:13.5px;">${p.nickname}</div>
+                            <div style="font-size:11px; color:#666;">${p.status || ''}</div>
+                            <div style="font-size:10px; color:#888;">${friendEmail}</div>
+                        </div>
+                    </div>
+                `;
+                listEl.innerHTML = html;
+            });
+        }
+    }
+
+    function inviteSelectedFriend() {
+        const selectEl = document.getElementById('inviteFriendSelect');
+        const invitedEmail = selectEl.value;
+        if (!invitedEmail) {
+            alert('초대할 친구를 선택해주세요.');
+            return;
+        }
+        alert(invitedEmail + ' 님에게 대화방 초대 메시지를 보냈습니다!');
+        document.getElementById('roomParticipantsModal').style.display = 'none';
+    }
+
+    function closeChatRoom() {
+        document.getElementById('chatRoomView').style.display = 'none';
+        document.getElementById('mentionPopup').style.display = 'none';
+        activeChatType = null;
+        lastMsgSignature = "";
+        loadDmRooms();
+    }
+
+    function sendChatMessage() {
+        const textarea = document.getElementById('chatInputText');
+        const text = textarea.value.trim();
+        if(!text) return;
+
+        let key = activeChatType === 'open' ? 'chatty_open_chat' : 'chatty_dm_' + [currentUser, activeChatType].sort().join('_');
+        
+        let newMsg = { 
+            sender: currentUser, 
+            senderNick: myProfile.nickname, 
+            senderAvatar: myProfile.avatar, 
+            text: text, 
+            time: Date.now() 
+        };
+
+        textarea.value = '';
+        document.getElementById('mentionPopup').style.display = 'none';
+
+        let localCacheKey = 'cache_' + key;
+        let cached = JSON.parse(localStorage.getItem(localCacheKey) || '[]');
+        cached.push(newMsg);
+        localStorage.setItem(localCacheKey, JSON.stringify(cached));
+
+        appendMessageDOM(newMsg);
+
+        cloudLoad(key, function(msgs) {
+            msgs = msgs || [];
+            if(!msgs.some(m => m.time === newMsg.time && m.sender === newMsg.sender)) {
+                msgs.push(newMsg);
+            }
+            cloudSave(key, msgs, function() {
+                lastMsgSignature = "";
+            });
+        });
+    }
+
+    function appendMessageDOM(m) {
+        const box = document.getElementById('chatMessagesBox');
+        const isMe = (m.sender || "").trim().toLowerCase() === (currentUser || "").trim().toLowerCase();
+        const displayName = m.senderNick || m.sender;
+        const avatarImg = m.senderAvatar ? `<img src="${m.senderAvatar}" onerror="this.parentElement.innerHTML='${displayName[0].toUpperCase()}'">` : displayName[0].toUpperCase();
+        let senderInfo = (!isMe && activeChatType === 'open') ? `<div class="sender-name-tag" oncontextmenu="showContextMenu(event, ${m.time}, '${m.sender}', '${displayName}')">${displayName}</div>` : '';
+        
+        let formattedText = formatChatText(m.text);
+
+        box.innerHTML += `
+            <div class="bubble-wrapper ${isMe ? 'me' : 'other'}">
+                <div class="chat-msg-avatar">${avatarImg}</div>
+                <div class="bubble-content">
+                    ${senderInfo}
+                    <div class="chatty-bubble" oncontextmenu="showContextMenu(event, ${m.time}, '${m.sender}', '${displayName}')">${formattedText}</div>
+                </div>
+            </div>
+        `;
+        box.scrollTop = box.scrollHeight;
+    }
+
+    function loadChatMessages() {
+        if(!activeChatType) return;
+        let key = activeChatType === 'open' ? 'chatty_open_chat' : 'chatty_dm_' + [currentUser, activeChatType].sort().join('_');
+        let localCacheKey = 'cache_' + key;
+        
+        cloudLoad(key, function(msgs) {
+            msgs = msgs || [];
+            
+            let cached = JSON.parse(localStorage.getItem(localCacheKey) || '[]');
+            cached.forEach(cm => {
+                if(!msgs.some(m => m.time === cm.time && m.sender === cm.sender)) {
+                    msgs.push(cm);
+                }
+            });
+
+            msgs.sort((a, b) => a.time - b.time);
+
+            let currentSig = JSON.stringify(msgs);
+            if(currentSig === lastMsgSignature) return;
+            lastMsgSignature = currentSig;
+
+            const box = document.getElementById('chatMessagesBox');
+            box.innerHTML = '';
+            msgs.forEach(m => {
+                const isMe = (m.sender || "").trim().toLowerCase() === (currentUser || "").trim().toLowerCase();
+                const displayName = m.senderNick || m.sender;
+                const avatarImg = m.senderAvatar ? `<img src="${m.senderAvatar}" onerror="this.parentElement.innerHTML='${displayName[0].toUpperCase()}'">` : displayName[0].toUpperCase();
+                let senderInfo = (!isMe && activeChatType === 'open') ? `<div class="sender-name-tag" oncontextmenu="showContextMenu(event, ${m.time}, '${m.sender}', '${displayName}')">${displayName}</div>` : '';
+                
+                let formattedText = formatChatText(m.text);
+
+                box.innerHTML += `
+                    <div class="bubble-wrapper ${isMe ? 'me' : 'other'}">
+                        <div class="chat-msg-avatar">${avatarImg}</div>
+                        <div class="bubble-content">
+                            ${senderInfo}
+                            <div class="chatty-bubble" oncontextmenu="showContextMenu(event, ${m.time}, '${m.sender}', '${displayName}')">${formattedText}</div>
+                        </div>
+                    </div>
+                `;
+            });
+            box.scrollTop = box.scrollHeight;
+        });
+    }
+
+    function uploadFeed() {
+        const text = document.getElementById('feedText').value.trim();
+        const media = document.getElementById('feedMediaUrl').value.trim();
+        if(!text && !media) return;
+
+        cloudLoad('chatty_feeds', function(feeds) {
+            feeds = feeds || [];
+            feeds.unshift({ 
+                author: currentUser, 
+                authorNick: myProfile.nickname, 
+                authorAvatar: myProfile.avatar,
+                text: text, 
+                media: media, 
+                time: Date.now() 
+            });
+            cloudSave('chatty_feeds', feeds, function() {
+                document.getElementById('feedText').value = '';
+                document.getElementById('feedMediaUrl').value = '';
+                loadFeeds();
+            });
+        });
+    }
+
+    function loadFeeds() {
+        cloudLoad('chatty_feeds', function(feeds) {
+            feeds = feeds || [];
+            const list = document.getElementById('feedList');
+            let html = feeds.length === 0 ? '<div style="font-size:13px; color:#888; text-align:center; padding:20px;">등록된 피드가 없습니다. 첫 소식을 적어보세요!</div>' : '';
+            
+            feeds.forEach(f => {
+                let mediaTag = '';
+                if(f.media) {
+                    if(f.media.includes('youtube.com') || f.media.includes('youtu.be')) {
+                        let vid = f.media.split('v=')[1] || f.media.split('/').pop();
+                        mediaTag = `<iframe width="100%" height="200" src="https://www.youtube.com/embed/${vid}" frameborder="0" allowfullscreen style="margin-top:10px; border-radius:6px;"></iframe>`;
+                    } else {
+                        mediaTag = `<img src="${f.media}" style="width:100%; max-height:250px; border-radius:6px; margin-top:10px; object-fit:cover;" onerror="this.style.display='none'">`;
+                    }
+                }
+                const authorDisplay = f.authorNick || f.author;
+                const avatarImg = f.authorAvatar ? `<img src="${f.authorAvatar}" style="width:32px;height:32px;border-radius:12px;object-fit:cover;">` : `<div style="width:32px;height:32px;border-radius:12px;background:#ddd;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:bold;">${authorDisplay[0].toUpperCase()}</div>`;
+
+                html += `
+                    <div class="feed-card">
+                        <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
+                            ${avatarImg}
+                            <div style="font-weight:700; font-size:13px; color:#333;">${authorDisplay}</div>
+                        </div>
+                        <div style="font-size:14px; line-height:1.4;">${f.text}</div>
+                        ${mediaTag}
+                    </div>
+                `;
+            });
+            list.innerHTML = html;
+        });
+    }
+
+    setInterval(() => {
+        if(currentUser) {
+            loadDmRooms();
+            if(document.getElementById('chatRoomView').style.display === 'flex') {
+                loadChatMessages();
+            }
+            if(document.getElementById('tabFeed').classList.contains('active')) {
+                loadFeeds();
+            }
+        }
+    }, 2000);
+</script>
+
+</body>
+</html>
