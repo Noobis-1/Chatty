@@ -5,19 +5,16 @@
     <title>챗티 (Chatty)</title>
     
     <!-- 💡 PWABuilder 표준 Manifest 태그 -->
-    <link rel="manifest" href="data:application/manifest+json;utf8,%7B%22background_color%22%3A%22%2375fa15%22%2C%22dir%22%3A%22ltr%22%2C%22display%22%3A%22standalone%22%2C%22name%22%3A%22Chatty%22%2C%22orientation%22%3A%22any%22%2C%22scope%22%3A%22%2F%22%2C%22short_name%22%3A%22Chatty%22%2C%22start_url%22%3A%22%2F%22%2C%22theme_color%22%3A%22%2349ff00%22%2C%22icons%22%3A%5B%7B%22src%22%3A%22https%3A%2F%2Fscript.google.com%2Ffavicon.ico%22%2C%22type%22%3A%22image%2Fx-icon%22%2C%22sizes%22%3A%2232x32%22%7D%5D%2C%22id%22%3A%22Chatty%22%2C%22description%22%3A%22%EC%B1%84%ED%8C%85%20%ED%94%8C%EB%9E%A9%ED%8F%BC%22%7D">
-
-    <!-- 💡 PWABuilder 표준 Service Worker 등록 태그 -->
-    <script>
-        if ('serviceWorker' in navigator) {
-            window.addEventListener('load', () => {
-                const swContent = "self.addEventListener('install', e => self.skipWaiting()); self.addEventListener('activate', e => e.waitUntil(clients.claim())); self.addEventListener('fetch', e => e.respondWith(fetch(e.request).catch(() => caches.match(e.request))));";
-                const swBlob = new Blob([swContent], { type: 'text/javascript' });
-                const swUrl = URL.createObjectURL(swBlob);
-                navigator.serviceWorker.register(swUrl).catch(err => console.log('SW registration failed: ', err));
-            });
-        }
-    </script>
+<link rel="manifest" href="manifest.json">
+<script>
+    if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+            navigator.serviceWorker.register('sw.js')
+                .then(reg => console.log('Service Worker registered!', reg))
+                .catch(err => console.log('Service Worker registration failed: ', err));
+        });
+    }
+</script>
 
     <style>
         :root {
